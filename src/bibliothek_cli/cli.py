@@ -74,9 +74,17 @@ def cmd_locations(args: argparse.Namespace, as_json: bool) -> int:
 # ---------- Search ----------
 
 def handle_search(args: argparse.Namespace, as_json: bool) -> int:
+    query = (args.query or "").strip()
+    if not query:
+        return fail(
+            1,
+            "Suchbegriff darf nicht leer sein.",
+            as_json=as_json,
+            kind="usage",
+        )
     try:
         result = http_mod.search(
-            args.query,
+            query,
             base_url=os.environ.get("BIBLIOTHEK_BASE_URL", http_mod.DEFAULT_BASE),
             media=args.media,
             available_only=args.available,

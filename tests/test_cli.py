@@ -79,6 +79,25 @@ def test_renew_without_confirm_exits_5():
     assert data["error"]["kind"] == "confirm_required"
 
 
+def test_search_empty_query_exits_1():
+    """Leere/whitespace-only Query ist Usage-Fehler, kein 200-OK mit leeren Treffern."""
+    p = _exec(["search", "", "--json"])
+    assert p.returncode == 1
+    data = json.loads(p.stdout)
+    assert data["error"]["code"] == 1
+    assert data["error"]["kind"] == "usage"
+    p = _exec(["search", "   ", "--json"])
+    assert p.returncode == 1
+
+
+def test_search_limit_range_exits_1():
+    p = _exec(["search", "x", "--limit", "0", "--json"])
+    assert p.returncode == 1
+    assert json.loads(p.stdout)["error"]["kind"] == "usage"
+    p = _exec(["search", "x", "--limit", "51", "--json"])
+    assert p.returncode == 1
+
+
 def test_login_missing_env_exits_2():
     p = _exec(["login"], env={"BIBLIOTHEK_USER": "", "BIBLIOTHEK_PASSWORD": ""})
     assert p.returncode == 2
