@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/bibliothek_cli/__init__.py
 src/bibliothek_cli/cli.py
+src/bibliothek_cli/http.py
 src/bibliothek_cli.egg-info/PKG-INFO
 src/bibliothek_cli.egg-info/SOURCES.txt
 src/bibliothek_cli.egg-info/dependency_links.txt
