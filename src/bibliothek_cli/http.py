@@ -200,9 +200,9 @@ def _parse_hits(
         media_kind = _MEDIUM_MAP.get(media_label, (media_label or "unknown").lower())
         if not title:
             continue
-        if media != "all" and media_kind not in (media, "all"):
-            # wir lassen den Treffer drin; das Flag wird auf Treffer-Ebene gespiegelt
-            pass
+        if media != "all" and media_kind != media:
+            # Filter: Treffer mit nicht passendem Medientyp überspringen.
+            continue
         out.append(
             {
                 "id": rec_id,

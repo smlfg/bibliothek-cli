@@ -43,6 +43,26 @@ def test_parse_hits_limit():
     assert out["count"] == 3
 
 
+def test_parse_hits_filters_by_media_ebook():
+    """--media ebook muss Treffer auf den Medientyp einschränken."""
+    html = _read("search_hits.html")
+    out = http._parse_hits(
+        html, query="python", media="ebook", available_only=False, limit=10
+    )
+    assert out["count"] >= 1
+    for r in out["results"]:
+        assert r["media_type"] == "ebook"
+
+
+def test_parse_hits_filters_by_media_book_excludes_ebooks():
+    """--media book darf keine ebook-Treffer enthalten."""
+    html = _read("search_hits.html")
+    out = http._parse_hits(
+        html, query="python", media="book", available_only=False, limit=10
+    )
+    for r in out["results"]:
+        assert r["media_type"] != "ebook"
+
 def test_parse_hits_no_results():
     out = http._parse_hits(
         _read("search_empty.html"),
