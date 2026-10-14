@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bibliothek-cli"
+version = "0.1.0"
+description = "bibliothek – Agent-CLI für den LIV-Bibliothekskatalog (BSZ aDISWeb): Suche, Details, Watch, Login, Ausleihen, Verlängerung mit --confirm."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "smlfg"}]
+keywords = [
+    "bibliothek",
+    "bibliothek-cli",
+    "opac",
+    "bsz",
+    "adisweb",
+    "liv",
+    "hhn",
+    "agent",
+    "scraper",
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+bibliothek = "bibliothek_cli.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/smlfg/bibliothek-cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

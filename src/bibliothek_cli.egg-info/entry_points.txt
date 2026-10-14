@@ -1,0 +1,2 @@
+[console_scripts]
+bibliothek = bibliothek_cli.cli:main
