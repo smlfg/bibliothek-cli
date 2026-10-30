@@ -1,5 +1,16 @@
 # bibliothek-cli
 
+## Schnellstart
+
+```bash
+pipx install git+https://github.com/smlfg/bibliothek-cli   # empfohlen, landet im PATH
+# Alternativ: pip install --user git+https://github.com/smlfg/bibliothek-cli
+# Wenn der Befehl danach nicht gefunden wird: pipx nutzen oder das bin-Verzeichnis des venv in den PATH aufnehmen
+bibliothek login          # fragt Benutzernummer und Passwort im Terminal ab
+bibliothek search "python"
+bibliothek loans
+```
+
 Agent-CLI für den **LIV-Bibliothekskatalog** (OPAC HHN/DHBW Heilbronn).
 Treiber: aDISWeb/BSZ-OPAC04 unter
 [`https://bsz.ibs-bw.de/hshn`](https://bsz.ibs-bw.de/hshn).
@@ -8,8 +19,8 @@ Treiber: aDISWeb/BSZ-OPAC04 unter
 - Detail-Datensatz aus der Trefferliste (ID `AK…` aus
   `data-ajax`/`htmlOnLink`)
 - Lokaler Keyword-Watch (Datei-basiert, kein Server)
-- Login am Bibliothekskonto per **Env-Variablen** (`BIBLIOTHEK_USER` +
-  `BIBLIOTHEK_PASSWORD`, nie CLI-Flags)
+- Login am Bibliothekskonto interaktiv im Terminal oder per
+  **Env-Variablen** (`BIBLIOTHEK_USER` + `BIBLIOTHEK_PASSWORD`, nie CLI-Flags)
 - Ausleihen lesen, Verlängern **nur** mit `--confirm`
 - Idempotenter `logout`
 
@@ -17,32 +28,23 @@ Status: gebaut; Live-Suche gegen BSZ/aDISWeb getestet.
 
 ## Installation
 
+Für eine isolierte Installation ohne pipx:
+
 ```bash
-python -m venv /tmp/bib-venv
-/tmp/bib-venv/bin/pip install bibliothek-cli
-# oder aus diesem Repo:
-# pip install /home/box/cli-daily/bibliothek-cli
+python -m venv .venv
+.venv/bin/pip install git+https://github.com/smlfg/bibliothek-cli
 ```
 
-## Schnellstart
+## Weitere Beispiele
 
 ```bash
-# Katalog live durchsuchen
 bibliothek search "Python" --limit 5
 bibliothek search "Machine Learning" --media ebook --json
-
-# Standorte
-bibliothek locations --json
-
-# Lokaler Watch
+bibliothek locations
 bibliothek watch add "Deep Learning" --limit 10
 bibliothek watch list
-bibliothek watch remove 7be907e3
-
-# Login + Verlängern (mit Bestätigung)
 BIBLIOTHEK_USER=... BIBLIOTHEK_PASSWORD=... bibliothek login
 bibliothek loans list
-bibliothek loans renew LOAN_ID --confirm
 bibliothek logout
 ```
 
@@ -64,7 +66,9 @@ bibliothek logout
 Exit-Codes: `0` ok, `1` Usage, `2` Auth, `3` Netzwerk, `4` Parse,
 `5` Action ohne `--confirm`.
 
-Mit `--json` steht **genau ein** JSON-Objekt auf stdout, Prompts auf stderr.
+Im Terminal erscheint ohne `--json` eine lesbare Textausgabe; bei Pipe/Agent
+bleibt die JSON-Ausgabe erhalten. Mit `--json` steht **genau ein** JSON-Objekt
+auf stdout, Prompts auf stderr.
 
 Volle Spezifikation: [`INTERFACE.md`](./INTERFACE.md).
 
@@ -72,7 +76,7 @@ Volle Spezifikation: [`INTERFACE.md`](./INTERFACE.md).
 
 - `BIBLIOTHEK_USER`, `BIBLIOTHEK_PASSWORD`: Env, nie CLI-Args.
 - `BIBLIOTHEK_BASE_URL` (optional, default `https://bsz.ibs-bw.de/hshn`).
-- `BIBLIOTHEK_LOG` (optional, default `INFO`).
+- `BIBLIOTHEK_LOG` (optional, default `WARNING`; `-v` zeigt INFO-Logs).
 - `BIBLIOTHEK_CONFIG` (optional, default
   `$XDG_CONFIG_HOME/bibliothek-cli`). Watch + Session landen hier.
 
