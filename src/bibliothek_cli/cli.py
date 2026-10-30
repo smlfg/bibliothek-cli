@@ -141,8 +141,6 @@ def _render_search(data: dict[str, Any]) -> str:
             line += " | ausgeliehen"
         elif item.get("status"):
             line += f" | {item['status']}"
-        if item.get("media_type") and item["media_type"] != "unknown":
-            line += f" | {item['media_type']}"
         if item.get("id"):
             line += f" | ID {item['id']}"
         lines.append(line)
@@ -433,6 +431,16 @@ def _cancelled(as_json: bool) -> int:
     return 1
 
 
+def _ask(prompt: str) -> str:
+    """Liest eine Eingabe, gibt den Prompt aber auf stderr aus."""
+    out = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        return input(prompt)
+    finally:
+        sys.stdout = out
+
+
 def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
     """Login per Env oder interaktiv im Terminal.
 
@@ -446,7 +454,7 @@ def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
             return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
         try:
             if not user:
-                user = input("Benutzernummer: ").strip()
+                user = _ask("Benutzernummer: ").strip()
             if not pw:
                 pw = getpass.getpass("Passwort: ")
         except (EOFError, KeyboardInterrupt):
