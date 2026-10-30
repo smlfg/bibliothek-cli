@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import datetime
+import getpass
 import json
 import logging
 import os
@@ -21,6 +23,13 @@ LOG = logging.getLogger("bibliothek_cli")
 def _stdout_is_tty() -> bool:
     try:
         return bool(sys.stdout.isatty())
+    except Exception:
+        return False
+
+
+def _stdin_is_tty() -> bool:
+    try:
+        return bool(sys.stdin.isatty())
     except Exception:
         return False
 
@@ -411,6 +420,12 @@ def _session_path() -> str:
     return os.path.join(base, "session.json")
 
 
+_LOGIN_MISSING = (
+    "Login fehlt: `bibliothek login` im Terminal ausführen oder "
+    "BIBLIOTHEK_USER/BIBLIOTHEK_PASSWORD setzen"
+)
+
+
 def _cancelled(as_json: bool) -> int:
     if as_json:
         return fail(1, "Abgebrochen.", as_json=True, kind="cancelled")
@@ -419,28 +434,43 @@ def _cancelled(as_json: bool) -> int:
 
 
 def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
-    """Login mit BIBLIOTHEK_USER + BIBLIOTHEK_PASSWORD.
+    """Login per Env oder interaktiv im Terminal.
 
-    Bei fehlenden Credentials: Exit 2. Bei korrekten Credentials wird eine
-    Session in session.json (Mode 0600) gespeichert. Der Login ist derzeit als
-    Mock implementiert. Siehe docs/QA.md.
+    BIBLIOTHEK_USER und BIBLIOTHEK_PASSWORD haben Vorrang. Fehlende Werte
+    werden nur dann interaktiv abgefragt, wenn stdin ein Terminal ist.
     """
     user = os.environ.get("BIBLIOTHEK_USER")
     pw = os.environ.get("BIBLIOTHEK_PASSWORD")
     if not user or not pw:
+        if not _stdin_is_tty():
+            return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
+        try:
+            if not user:
+                user = input("Benutzernummer: ").strip()
+            if not pw:
+                pw = getpass.getpass("Passwort: ")
+        except (EOFError, KeyboardInterrupt):
+            return _cancelled(as_json)
+    if not user or not pw:
         return fail(
             2,
-            "BIBLIOTHEK_USER und/oder BIBLIOTHEK_PASSWORD nicht gesetzt.",
+            "Login unvollständig: Benutzernummer und Passwort erforderlich.",
             as_json=as_json,
             kind="auth",
         )
+    try:
+        auth = http_mod.login_session(
+            user,
+            pw,
+            base_url=os.environ.get("BIBLIOTHEK_BASE_URL", http_mod.DEFAULT_BASE),
+        )
+    except http_mod.HttpError as e:
+        return fail(3, str(e), as_json=as_json, kind="network")
     sess = {
         "user": user,
-        "cookies": {},
-        "established_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
-        "mock": True,
+        "cookies": auth.get("cookies", {}),
+        "established_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "mock": bool(auth.get("mock", False)),
     }
     path = _session_path()
     tmp = path + ".tmp"
@@ -452,7 +482,7 @@ def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
         {
             "login": "ok",
             "user": user,
-            "mock": True,
+            "mock": sess["mock"],
             "note": "Mock-Session; ohne Live-Backend.",
         },
         as_json=as_json,

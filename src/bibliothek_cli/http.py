@@ -51,6 +51,24 @@ def _build_session() -> requests.Session:
     return s
 
 
+def login_session(
+    user: str,
+    password: str,
+    *,
+    base_url: str = DEFAULT_BASE,
+    timeout: float = 30.0,
+) -> dict:
+    """Login-Seam für die Session-Erstellung.
+
+    aDISWeb benötigt einen JS/Cookie-POST; dieser Live-Roundtrip ist noch
+    nicht implementiert. Die Funktion liefert deshalb eine Mock-Session und
+    ist der zentrale Punkt für einen späteren echten Login. Sie sendet keine
+    Zugangsdaten an einen Server.
+    """
+    LOG.info("login (mock) für Benutzer %s", user)
+    return {"cookies": {}, "mock": True}
+
+
 def bootstrap(base_url: str, timeout: float = 30.0) -> tuple[requests.Session, str]:
     """Holt eine JSESSIONID und liefert (Session, action-URL)."""
     s = _build_session()

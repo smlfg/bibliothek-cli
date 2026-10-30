@@ -5,7 +5,13 @@ CLI: `bibliothek` (Paket `bibliothek-cli`, v0.1.0).
 ## Allgemein
 
 - `--help` / `--version` (gedruckt auf stdout, exit 0).
-- Globale Optionen: `--json` (genau ein JSON-Objekt auf stdout, Logs auf stderr).
+- Globale Optionen: `--json` (genau ein JSON-Objekt auf stdout, Logs auf stderr),
+  `-v`/`--verbose` (INFO-Logs auf stderr; Default ist WARNING).
+- Ausgabe: Ist stdout ein Terminal und `--json` nicht gesetzt, erscheint eine
+  lesbare Textausgabe. Bei Pipe/Agent (stdout kein Terminal) bleibt die
+  bisherige JSON-Ausgabe ohne `--json` unverändert.
+- Interaktive Prompts nur, wenn stdin ein Terminal ist; sonst klare
+  Fehlermeldung mit nächstem Schritt.
 - Ausgaben-Sprache: Deutsch (Texte für Menschen), JSON-Felder englisch.
 
 ## Exit-Codes
@@ -60,13 +66,17 @@ CLI: `bibliothek` (Paket `bibliothek-cli`, v0.1.0).
 ### `bibliothek login`
 
 - Liest `BIBLIOTHEK_USER` und `BIBLIOTHEK_PASSWORD` aus der Umgebung, nie
-  CLI-Args.
-- Erfolg erst nach Beweis: Seite „Mein Konto" / „Ausleihen" wurde
-  gerendert.
+  CLI-Args; Env hat Vorrang.
+- Fehlen Werte und ist stdin ein Terminal, werden Benutzernummer (`input`)
+  und Passwort (`getpass`) interaktiv abgefragt.
+- Ohne Terminal und ohne Env: Exit 2 mit
+  „Login fehlt: `bibliothek login` im Terminal ausführen oder
+  BIBLIOTHEK_USER/BIBLIOTHEK_PASSWORD setzen“.
+- EOF/Strg+C beim Prompt: „Abgebrochen.“ ohne Traceback, Exit 1.
 - Session-Cookies in `$XDG_CONFIG_HOME/bibliothek-cli/session.json`,
   Mode 0600. Nur OPAC-Cookies (Origin-Check).
-- Exit 2 bei fehlenden Env-Variablen; Exit 3 bei HTTP-Fehler; Exit 4 bei
-  Parser-Fehler.
+- Der Live-Login ist weiterhin Mock (siehe README/QA); die Session wird
+  über den Seam `http.login_session` erzeugt.
 
 ### `bibliothek loans list [--json]`
 
