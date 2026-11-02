@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Anmelden - Online-Katalog | HS Heilbronn</title>
+  <!-- SYNTHETISCH: aus der live gesehenen aDISWeb-Anmeldemaske nachgebaut, keine echten Zugangsdaten. -->
+</head>
+<body>
+  <main id="main">
+    <h1>Anmelden</h1>
+    <p>Hier können Sie sich als Leser unserer Bibliothek anmelden.</p>
+
+    <form method="post" name="Form0" action="/aDISWeb/app?service=login">
+      <input type="hidden" name="service" value="login">
+      <input type="hidden" name="sp" value="S0">
+      <input type="hidden" name="requestCount" value="1">
+      <input type="hidden" name="scriptEnabled" value="T">
+      <input type="hidden" name="$FormConditional" value="T">
+      <input type="hidden" name="$FormConditional$0" value="T">
+      <input type="hidden" name="$FormConditional$1" value="T">
+      <label for="IDENT_1">Ausweisnummer</label>
+      <input type="text" id="IDENT_1" name="$Textfield" autocomplete="username">
+      <label for="LPASSW_1">Passwort</label>
+      <input type="password" id="LPASSW_1" name="$Textfield$0" autocomplete="current-password">
+      <input type="submit" name="textButton" value="Anmelden">
+      <input type="submit" name="textButton$0" value="Abbrechen">
+    </form>
+  </main>
+</body>
+</html>

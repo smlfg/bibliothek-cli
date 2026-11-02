@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Online-Katalog | HS Heilbronn</title>
+  <!-- LIVE (gekürzt): Startseite des OPAC https://bsz.ibs-bw.de/hshn, nur Suchmaske. -->
+</head>
+<body>
+  <main id="main">
+    <h1>Online-Katalog der Hochschulbibliothek</h1>
+    <p><a href="/aDISWeb/app?service=loginform">Mein Konto / Anmelden</a></p>
+
+    <form method="post" name="Form0" action="/aDISWeb/app?service=search">
+      <input type="hidden" name="service" value="search">
+      <input type="hidden" name="sp" value="S0">
+      <input type="hidden" name="focus" value="">
+      <input type="hidden" name="keyCode" value="0">
+      <input type="hidden" name="source" value="">
+      <input type="hidden" name="selected" value="">
+      <input type="hidden" name="requestCount" value="0">
+      <input type="hidden" name="scriptEnabled" value="T">
+      <label for="Autosuggest">Suchbegriff</label>
+      <input type="search" id="Autosuggest" name="$Autosuggest" value="">
+      <input type="submit" name="textButton" value="Suchen">
+    </form>
+  </main>
+</body>
+</html>

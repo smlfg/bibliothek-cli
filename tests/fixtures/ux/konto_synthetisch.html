@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Mein Konto - Online-Katalog | HS Heilbronn</title>
+  <!-- SYNTHETISCH: Kontoseite nach erfolgreichem Login, aus aDISWeb-Struktur nachgebaut. -->
+</head>
+<body>
+  <main id="main">
+    <h1>Mein Konto</h1>
+    <p>Angemeldet als Ausweis 123456789 (Testkonto).</p>
+
+    <h2>Ausleihen</h2>
+    <form method="post" name="Form0" action="/aDISWeb/app?service=renew">
+      <input type="hidden" name="service" value="renew">
+      <input type="hidden" name="sp" value="S0">
+
+      <table>
+        <thead>
+          <tr><th>Auswahl</th><th>Titel</th><th>Fällig</th><th>Verlängerungen</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><input type="checkbox" name="cellCheck$0" value="3360581"></td>
+            <td>Grundlagen der Hydraulik / Grollius, Horst-W.</td>
+            <td>16.11.2026</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" name="cellCheck$1" value="3360597"></td>
+            <td>Grundlagen der Hydraulik / Übungsbuch</td>
+            <td>23.11.2026</td>
+            <td>0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <input type="submit" name="textButton$1" value="Verlängern">
+    </form>
+  </main>
+</body>
+</html>

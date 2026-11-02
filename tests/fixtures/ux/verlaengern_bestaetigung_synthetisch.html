@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Verlängern - Mein Konto | HS Heilbronn</title>
+  <!-- SYNTHETISCH: Bestätigungsseite der Verlängerung, nach aDISWeb-Formularstruktur nachgebaut. -->
+</head>
+<body>
+  <main id="main">
+    <h1>Verlängerung bestätigen</h1>
+    <p>Titel: Grundlagen der Hydraulik / Grollius, Horst-W.</p>
+    <p>Bisherige Frist: 16.11.2026</p>
+    <p>Neue Frist: 07.12.2026</p>
+
+    <form method="post" name="Form0" action="/aDISWeb/app?service=renewconfirm">
+      <input type="hidden" name="service" value="renewconfirm">
+      <input type="hidden" name="sp" value="S0">
+      <input type="hidden" name="bestaetigungstoken" value="TEST-TOKEN-3360581">
+      <input type="submit" name="textButton" value="Verlängern">
+    </form>
+  </main>
+</body>
+</html>

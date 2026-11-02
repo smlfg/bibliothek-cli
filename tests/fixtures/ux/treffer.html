@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Trefferliste - Online-Katalog | HS Heilbronn</title>
+  <!-- LIVE (gekürzt): echte Trefferliste zu "python" bzw. "Maschinenbau", auf zwei Datensätze gekürzt. -->
+</head>
+<body>
+  <main id="main">
+    <p>Treffer: 2 im "Bibliotheksbestand"</p>
+
+    <form method="post" name="Form0" action="/aDISWeb/app?service=detail">
+      <input type="hidden" name="service" value="detail">
+      <input type="hidden" name="sp" value="S0">
+      <input type="hidden" name="selected" value="">
+      <input type="hidden" name="requestCount" value="1">
+      <input type="hidden" name="scriptEnabled" value="T">
+
+      <ul class="rList">
+        <li class="rList_li rList_li_even" data-ajax="AK63638611">
+          <div class="rList_grid">
+            <div class="rList_col rList_num">1</div>
+            <div class="rList_col rList_titel">
+              <a href="javascript:htmlOnLink('AK63638611')">Grundlagen der Hydraulik</a>
+            </div>
+            <div class="rList_col rList_jahr">2026</div>
+            <div class="rList_col rList_medium">
+              <img alt="Buch" title="Buch" src="/aDISWeb/assets/medium-buch.svg">
+            </div>
+            <div class="rList_col rList_name">Grollius, Horst-W.</div>
+            <div class="rList_col rList_sig">ZL 4650 G875 (2026)</div>
+          </div>
+        </li>
+        <li class="rList_li rList_li_odd" data-ajax="AK63638606">
+          <div class="rList_grid">
+            <div class="rList_col rList_num">2</div>
+            <div class="rList_col rList_titel">
+              <a href="javascript:htmlOnLink('AK63638606')">Technisches Zeichnen im Maschinenbau</a>
+            </div>
+            <div class="rList_col rList_jahr">2026</div>
+            <div class="rList_col rList_medium">
+              <img alt="Buch" title="Buch" src="/aDISWeb/assets/medium-buch.svg">
+            </div>
+            <div class="rList_col rList_name">Beispiel, Berta</div>
+            <div class="rList_col rList_sig">ZG 9140 G875 (2026)</div>
+          </div>
+        </li>
+      </ul>
+    </form>
+  </main>
+</body>
+</html>
