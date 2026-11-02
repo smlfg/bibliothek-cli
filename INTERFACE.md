@@ -118,8 +118,8 @@ CLI: `bibliothek` (Paket `bibliothek-cli`, v0.1.0).
   `konto_laden` → `verlaengern_absenden` → `verlaengern_bestaetigen`.
   Erfolg gilt erst nach der Bestätigungsseite mit neuem Fälligkeitsdatum, nicht
   bei HTTP 200 allein.
-- `N` (oder Enter) bricht nach `konto_laden` ab: Exit 1, „Abgebrochen.“, keine
-  schreibenden Schritte.
+- `N` (oder Enter) bricht nach `konto_laden` ab: Exit 0, „Abgebrochen.“, keine
+  schreibenden Schritte (Abbruch durch den Nutzer ist kein Fehler).
 - `--confirm`/`--yes` sind nur für Agenten: keine `[j/N]`-Frage, aber dieselben
   Formularschritte; `--yes` ist ein Alias für `--confirm`.
 - Ausgabe im Terminal u. a. `Verlängerung bestätigt.` und

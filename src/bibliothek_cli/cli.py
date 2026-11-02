@@ -394,8 +394,10 @@ def handle_show(args: argparse.Namespace, as_json: bool) -> int:
         return fail(4, str(e), as_json=as_json, kind="parse")
     detail.setdefault("title", chosen["title"])
     detail.setdefault("year", chosen["year"])
-    if not detail.get("authors") and chosen.get("author"):
+    if chosen.get("author"):
         detail["authors"] = [chosen["author"]]
+    elif not detail.get("authors"):
+        detail["authors"] = []
     detail.setdefault("signature", chosen.get("signature", ""))
     detail.setdefault("media_type", chosen.get("media_type", ""))
     return emit(detail, as_json=as_json, render=_render_show)
@@ -833,7 +835,10 @@ def cmd_verlaengern(args: argparse.Namespace, as_json: bool) -> int:
         except (EOFError, KeyboardInterrupt):
             return _cancelled(as_json)
         if answer.strip().casefold() not in {"j", "ja", "y", "yes"}:
-            return _cancelled(as_json)
+            if as_json:
+                return emit({"cancelled": True, "renewed": False}, as_json=True)
+            sys.stderr.write("Abgebrochen.\n")
+            return 0
 
     try:
         result = http_mod.renew_loan(konto, loan)
