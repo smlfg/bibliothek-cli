@@ -425,12 +425,12 @@ def _parse_detail(html: str, record_id: str) -> dict:
     ]
     media_type = meta.get("medienart", "").strip("[] ")
 
-    locations: list[dict[str, str]] = []
+    copies: list[dict[str, str]] = []
     for row in soup.select("table tbody tr"):
         cells = [cell.get_text(" ", strip=True) for cell in row.find_all("td")]
         if len(cells) < 3:
             continue
-        locations.append(
+        copies.append(
             {
                 "library": cells[0],
                 "location": cells[1],
@@ -438,9 +438,9 @@ def _parse_detail(html: str, record_id: str) -> dict:
                 "status": cells[-1],
             }
         )
-    signature = locations[0]["signature"] if locations else ""
+    signature = copies[0]["signature"] if copies else ""
     location_lines = []
-    for loc in locations:
+    for loc in copies:
         line = ", ".join(
             part for part in (loc.get("library"), loc.get("location")) if part
         )
@@ -469,6 +469,7 @@ def _parse_detail(html: str, record_id: str) -> dict:
         "media_type": media_type,
         "signature": signature,
         "locations": location_lines,
+        "copies": copies,
     }
 
 

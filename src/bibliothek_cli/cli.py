@@ -8,6 +8,7 @@ import getpass
 import json
 import logging
 import os
+import re
 import sys
 import traceback
 from typing import Any, Callable
@@ -147,6 +148,12 @@ def _render_search(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _format_status(status: str) -> str:
+    return re.sub(
+        r"\s+-\s+Fällig am:?\s*", " – fällig am ", status, flags=re.IGNORECASE
+    ).strip()
+
+
 def _render_show(data: dict[str, Any]) -> str:
     lines = []
     if data.get("title"):
@@ -156,15 +163,25 @@ def _render_show(data: dict[str, Any]) -> str:
         lines.append(f"Autor: {', '.join(authors)}")
     if data.get("year"):
         lines.append(f"Jahr: {data['year']}")
+    copies = data.get("copies") or []
+    first = copies[0] if copies else {}
+    standort = ", ".join(
+        part for part in (first.get("library"), first.get("location")) if part
+    )
+    if standort:
+        lines.append(f"Standort: {standort}")
     if data.get("signature"):
         lines.append(f"Signatur: {data['signature']}")
+    if first.get("status"):
+        lines.append(f"Status: {_format_status(first['status'])}")
     if data.get("media_type"):
         lines.append(f"Medientyp: {data['media_type']}")
-    locations = data.get("locations") or []
-    if locations:
-        lines.append("Standorte:")
-        for loc in locations:
-            lines.append(f"  - {loc}")
+    if not copies:
+        locations = data.get("locations") or []
+        if locations:
+            lines.append("Standorte:")
+            for loc in locations:
+                lines.append(f"  - {loc}")
     if data.get("id"):
         lines.append(f"ID: {data['id']}")
     if data.get("note"):
