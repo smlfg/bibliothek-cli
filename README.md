@@ -3,12 +3,10 @@
 ## Schnellstart
 
 ```bash
-pipx install git+https://github.com/smlfg/bibliothek-cli   # empfohlen, landet im PATH
-# Alternativ: pip install --user git+https://github.com/smlfg/bibliothek-cli
-# Wenn der Befehl danach nicht gefunden wird: pipx nutzen oder das bin-Verzeichnis des venv in den PATH aufnehmen
-bibliothek login          # fragt Benutzernummer und Passwort im Terminal ab
-bibliothek search "python"
-bibliothek loans
+pipx install git+https://github.com/smlfg/bibliothek-cli
+bibliothek login
+bibliothek search "Grundlagen der Hydraulik"
+bibliothek verlaengern "Grundlagen der Hydraulik"
 ```
 
 Agent-CLI für den **LIV-Bibliothekskatalog** (OPAC HHN/DHBW Heilbronn).
