@@ -195,7 +195,12 @@ def _render_watch(data: dict[str, Any]) -> str:
 
 def _render_login(data: dict[str, Any]) -> str:
     note = " (Mock-Session)" if data.get("mock") else ""
-    return f"Login ok als {data.get('user', '?')}{note}."
+    return f"Login erfolgreich als {data.get('user', '?')}{note}."
+
+
+def _render_whoami(data: dict[str, Any]) -> str:
+    note = " (Mock-Session)" if data.get("mock") else ""
+    return f"Angemeldet als {data.get('user', '?')}{note}."
 
 
 def _render_logout(data: dict[str, Any]) -> str:
@@ -230,6 +235,15 @@ def _render_renew(data: dict[str, Any]) -> str:
     )
 
 
+def _render_verlaengern(data: dict[str, Any]) -> str:
+    lines = []
+    if data.get("title"):
+        lines.append(f"Titel: {data['title']}")
+    lines.append("Verlängerung bestätigt.")
+    lines.append(f"Neues Fälligkeitsdatum: {data.get('new_due', '?')}")
+    return "\n".join(lines)
+
+
 # ---------- Search ----------
 
 def handle_search(args: argparse.Namespace, as_json: bool) -> int:
@@ -260,66 +274,114 @@ def handle_search(args: argparse.Namespace, as_json: bool) -> int:
 
 # ---------- Show ----------
 
-def handle_show(args: argparse.Namespace, as_json: bool) -> int:
-    """Liefert den Detaildatensatz.
+def _extract_record_id(rec: str) -> str:
+    import re as _re
+    match = _re.search(r"(AK[A-Z0-9]+)", rec)
+    return match.group(1) if match else rec
 
-    aDISWeb stellt eine echte Detailseite nur über JS bereit (submitLink). Aus
-    der Trefferliste haben wir den Datensatz bereits geparst. Hier machen wir
-    eine zweite Suche mit exakter ID, was aktuell die Trefferliste zurückliefert.
-    In einer zukünftigen Version kann die Vollanzeige (mit Standort/
-    Verfügbarkeit) per Playwright nachgeladen werden.
-    """
-    rec = args.record.strip()
-    if rec.startswith("http"):
-        # ID aus URL extrahieren
-        import re as _re
-        m = _re.search(r"(AK[A-Z0-9]+)", rec)
-        rec_id = m.group(1) if m else rec
-    else:
-        rec_id = rec
-    try:
-        # Wir laden einmal die Suche mit limit = 5 und markieren, wenn der Datensatz
-        # dabei ist. Für die Vollanzeige reicht das hier aus.
-        hits = http_mod.search(
-            rec_id,
-            limit=5,
+
+def _show_from_hit(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": record["id"],
+        "title": record["title"],
+        "authors": [record["author"]] if record["author"] else [],
+        "year": record["year"],
+        "signature": record["signature"],
+        "media_type": record["media_type"],
+        "locations": [],
+    }
+
+
+def handle_show(args: argparse.Namespace, as_json: bool) -> int:
+    rec = (args.record or "").strip()
+    if not rec:
+        return fail(
+            1,
+            "Titel oder Datensatz-ID angeben, z. B. `bibliothek show AK63638611`.",
+            as_json=as_json,
+            kind="usage",
         )
+    base_url = os.environ.get("BIBLIOTHEK_BASE_URL", http_mod.DEFAULT_BASE)
+    looks_like_id = bool(_extract_record_id(rec).upper().startswith("AK"))
+    search_term = _extract_record_id(rec) if (rec.startswith("http") or looks_like_id) else rec
+    try:
+        hits = http_mod.search(search_term, base_url=base_url, limit=20)
     except http_mod.HttpError as e:
         return fail(3, str(e), as_json=as_json, kind="network")
     except http_mod.ParseError as e:
         return fail(4, str(e), as_json=as_json, kind="parse")
 
-    record = None
-    for r in hits["results"]:
-        if r["id"].upper() == rec_id.upper():
-            record = r
-            break
-    if record is None:
+    results = hits.get("results") or []
+    if looks_like_id:
+        record = next(
+            (item for item in results if item["id"].upper() == search_term.upper()),
+            None,
+        )
+        if record is None:
+            return fail(
+                4,
+                f"Datensatz {search_term} nicht gefunden. Prüfe die ID oder "
+                "nutze `bibliothek search SUCHBEGRIFF`.",
+                as_json=as_json,
+                kind="parse",
+            )
+        return emit(_show_from_hit(record), as_json=as_json, render=_render_show)
+
+    if not results:
         return fail(
             4,
-            f"Datensatz {rec_id} nicht in erster Anzeige; Vollanzeite via "
-            "Playwright in einer Folgeversion.",
+            f"Kein Treffer für „{rec}“. Prüfe den Suchbegriff mit "
+            "`bibliothek search SUCHBEGRIFF`.",
             as_json=as_json,
             kind="parse",
         )
-    return emit(
-        {
-            "id": record["id"],
-            "title": record["title"],
-            "authors": [record["author"]] if record["author"] else [],
-            "year": record["year"],
-            "signature": record["signature"],
-            "media_type": record["media_type"],
-            "locations": [],  # Vollanzeite benötigt Playwright
-            "note": (
-                "Vollanzeite mit Standortdetails benötigt eine "
-                "JS-gesteuerte Detailansicht. Diese Version liefert die "
-                "Metadaten aus der Trefferliste."
-            ),
-        },
-        as_json=as_json,
-        render=_render_show,
-    )
+    exact = [item for item in results if item["title"].casefold() == rec.casefold()]
+    if exact:
+        chosen = exact[0]
+    elif len(results) == 1:
+        chosen = results[0]
+    elif not _stdin_is_tty():
+        lines = [
+            f"[{index}] {item['title']} ({item.get('year') or '?'})"
+            for index, item in enumerate(results, 1)
+        ]
+        return fail(
+            1,
+            "Mehrere Treffer, ohne Terminal keine Auswahl:\n"
+            + "\n".join(lines)
+            + "\nWähle eine ID und nutze `bibliothek show AK...`.",
+            as_json=as_json,
+            kind="usage",
+        )
+    else:
+        for index, item in enumerate(results, 1):
+            sys.stderr.write(
+                f"[{index}] {item['title']} ({item.get('year') or '?'})\n"
+            )
+        try:
+            answer = _ask(f"Auswahl [1-{len(results)}]: ").strip()
+            choice = int(answer)
+        except (EOFError, KeyboardInterrupt):
+            return _cancelled(as_json)
+        except ValueError:
+            return fail(1, "Bitte eine Zahl aus der Liste eingeben.", as_json=as_json)
+        if not 1 <= choice <= len(results):
+            return fail(1, "Auswahl außerhalb der Liste.", as_json=as_json)
+        chosen = results[choice - 1]
+
+    try:
+        detail = http_mod.detail(chosen["id"], base_url=base_url)
+    except http_mod.HttpError as e:
+        return fail(3, str(e), as_json=as_json, kind="network")
+    except http_mod.ParseError as e:
+        return fail(4, str(e), as_json=as_json, kind="parse")
+    detail.setdefault("title", chosen["title"])
+    detail.setdefault("year", chosen["year"])
+    if not detail.get("authors") and chosen.get("author"):
+        detail["authors"] = [chosen["author"]]
+    detail.setdefault("signature", chosen.get("signature", ""))
+    detail.setdefault("media_type", chosen.get("media_type", ""))
+    return emit(detail, as_json=as_json, render=_render_show)
 
 
 # ---------- Watch ----------
@@ -441,6 +503,40 @@ def _ask(prompt: str) -> str:
         sys.stdout = out
 
 
+def _read_session() -> dict[str, Any] | None:
+    path = _session_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        data = json.loads(open(path, encoding="utf-8").read() or "{}")
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_session(sess: dict[str, Any]) -> None:
+    path = _session_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(sess, f, ensure_ascii=False, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def _base_url() -> str:
+    return os.environ.get("BIBLIOTHEK_BASE_URL", http_mod.DEFAULT_BASE)
+
+
+def _fail_http(exc: Exception, as_json: bool) -> int:
+    if isinstance(exc, http_mod.AuthError):
+        return fail(2, str(exc), as_json=as_json, kind="auth")
+    if isinstance(exc, http_mod.ParseError):
+        return fail(4, str(exc), as_json=as_json, kind="parse")
+    if isinstance(exc, http_mod.HttpError):
+        return fail(3, str(exc), as_json=as_json, kind="network")
+    return fail(5, f"Unerwarteter Fehler: {exc}", as_json=as_json)
+
+
 def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
     """Login per Env oder interaktiv im Terminal.
 
@@ -454,7 +550,7 @@ def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
             return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
         try:
             if not user:
-                user = _ask("Benutzernummer: ").strip()
+                user = _ask("Ausweisnummer: ").strip()
             if not pw:
                 pw = getpass.getpass("Passwort: ")
         except (EOFError, KeyboardInterrupt):
@@ -462,39 +558,49 @@ def cmd_login(args: argparse.Namespace, as_json: bool) -> int:
     if not user or not pw:
         return fail(
             2,
-            "Login unvollständig: Benutzernummer und Passwort erforderlich.",
+            "Login unvollständig: Ausweisnummer und Passwort erforderlich. "
+            "Starte `bibliothek login` erneut.",
             as_json=as_json,
             kind="auth",
         )
     try:
-        auth = http_mod.login_session(
-            user,
-            pw,
-            base_url=os.environ.get("BIBLIOTHEK_BASE_URL", http_mod.DEFAULT_BASE),
-        )
-    except http_mod.HttpError as e:
-        return fail(3, str(e), as_json=as_json, kind="network")
+        auth = http_mod.login_session(user, pw, base_url=_base_url())
+    except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+        return _fail_http(e, as_json)
     sess = {
         "user": user,
         "cookies": auth.get("cookies", {}),
         "established_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "mock": bool(auth.get("mock", False)),
     }
-    path = _session_path()
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(sess, f, ensure_ascii=False, indent=2)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    _write_session(sess)
+    data: dict[str, Any] = {
+        "login": "ok",
+        "user": user,
+        "mock": sess["mock"],
+    }
+    if sess["mock"]:
+        data["note"] = "Mock-Session; ohne Live-Backend."
+    return emit(data, as_json=as_json, render=_render_login)
+
+
+def cmd_whoami(args: argparse.Namespace, as_json: bool) -> int:
+    sess = _read_session()
+    if not sess or not sess.get("user"):
+        return fail(
+            2,
+            "Keine Session. Führe `bibliothek login` aus.",
+            as_json=as_json,
+            kind="auth",
+        )
     return emit(
         {
-            "login": "ok",
-            "user": user,
-            "mock": sess["mock"],
-            "note": "Mock-Session; ohne Live-Backend.",
+            "user": sess.get("user"),
+            "established_at": sess.get("established_at", ""),
+            "mock": bool(sess.get("mock", False)),
         },
         as_json=as_json,
-        render=_render_login,
+        render=_render_whoami,
     )
 
 
@@ -511,65 +617,212 @@ def cmd_logout(args: argparse.Namespace, as_json: bool) -> int:
     )
 
 
+_MOCK_LOANS = [
+    {
+        "id": "MOCK-1",
+        "title": "Beispiel-Ausleihe (Mock)",
+        "due": "2026-11-01",
+        "renewals": 0,
+        "can_renew": True,
+    }
+]
+
+
+def _load_konto_or_fail(sess: dict[str, Any]) -> dict[str, Any]:
+    return http_mod.load_konto(sess.get("cookies", {}), base_url=_base_url())
+
+
 def cmd_loans(args: argparse.Namespace, as_json: bool) -> int:
     sub = getattr(args, "loans_cmd", None)
-    if sub is None or sub == "list":
-        path = _session_path()
-        if not os.path.exists(path):
-            return fail(
-                2,
-                "Keine Session. Erst `bibliothek login` mit gültigen "
-                "BIBLIOTHEK_USER/BIBLIOTHEK_PASSWORD ausführen.",
-                as_json=as_json,
-                kind="auth",
-            )
-        sess = json.loads(open(path, encoding="utf-8").read() or "{}")
-        if sess.get("mock"):
-            # Mock-Ausleihen
-            return emit(
-                {
-                    "loans": [
-                        {
-                            "id": "MOCK-1",
-                            "title": "Beispiel-Ausleihe (Mock)",
-                            "due": "2026-11-01",
-                            "renewals": 0,
-                            "can_renew": True,
-                        }
-                    ],
-                    "mock": True,
-                },
-                as_json=as_json,
-                render=_render_loans,
-            )
-        return fail(
-            4,
-            "Live-Session, aber kein Backend-Parser vorhanden.",
-            as_json=as_json,
-            kind="parse",
-        )
     if sub == "renew":
         if not args.confirm:
             return fail(
                 5,
-                "Verlängerung verlangt --confirm; keine Aktion ausgeführt.",
+                "Verlängerung verlangt --confirm; keine Aktion ausgeführt. "
+                "Starte `bibliothek verlaengern TITEL` im Terminal oder nutze "
+                "--confirm.",
                 as_json=as_json,
                 kind="confirm_required",
             )
-        if not os.path.exists(_session_path()):
-            return fail(2, "Keine Session.", as_json=as_json, kind="auth")
-        # Mock: ohne echtes Backend keine echte Verlängerung
-        return emit(
-            {
-                "id": args.loan_id,
-                "renewed": True,
-                "new_due": "2026-11-15",
-                "mock": True,
-            },
-            as_json=as_json,
-            render=_render_renew,
+        sess = _read_session()
+        if sess is None:
+            return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
+        if sess.get("mock"):
+            return emit(
+                {
+                    "id": args.loan_id,
+                    "renewed": True,
+                    "new_due": "2026-11-15",
+                    "mock": True,
+                },
+                as_json=as_json,
+                render=_render_renew,
+            )
+        try:
+            konto = _load_konto_or_fail(sess)
+        except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+            return _fail_http(e, as_json)
+        loan = next(
+            (item for item in konto["loans"] if item["id"] == args.loan_id), None
         )
-    return fail(1, f"unknown loans subcommand: {sub}", as_json=as_json)
+        if loan is None:
+            return fail(
+                4,
+                f"Ausleihe {args.loan_id} nicht im Konto gefunden. "
+                "`bibliothek loans` zeigt alle Ausleihen.",
+                as_json=as_json,
+                kind="parse",
+            )
+        try:
+            result = http_mod.renew_loan(konto, loan)
+        except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+            return _fail_http(e, as_json)
+        return emit(result, as_json=as_json, render=_render_renew)
+
+    if sub not in (None, "list"):
+        return fail(1, f"unknown loans subcommand: {sub}", as_json=as_json)
+
+    sess = _read_session()
+    if sess is None:
+        return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
+    if sess.get("mock"):
+        return emit(
+            {"loans": _MOCK_LOANS, "mock": True},
+            as_json=as_json,
+            render=_render_loans,
+        )
+    try:
+        konto = _load_konto_or_fail(sess)
+    except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+        return _fail_http(e, as_json)
+    return emit(
+        {"loans": konto["loans"]},
+        as_json=as_json,
+        render=_render_loans,
+    )
+
+
+def _choose_loan(
+    loans: list[dict[str, Any]], title: str, *, interactive: bool, as_json: bool
+) -> tuple[dict[str, Any] | None, int | None]:
+    query = title.casefold()
+    matches = [loan for loan in loans if query in (loan.get("title") or "").casefold()]
+    if not matches:
+        return None, fail(
+            4,
+            f"Keine Ausleihe zu „{title}“ gefunden. `bibliothek loans` zeigt "
+            "alle Ausleihen.",
+            as_json=as_json,
+            kind="parse",
+        )
+    if len(matches) == 1:
+        return matches[0], None
+    if not interactive:
+        lines = [
+            f"[{index}] {loan.get('title')} | fällig {loan.get('due') or '?'}"
+            for index, loan in enumerate(matches, 1)
+        ]
+        return None, fail(
+            2,
+            "Mehrere Ausleihen passen, ohne Terminal keine Auswahl:\n"
+            + "\n".join(lines)
+            + "\nNutze im Terminal `bibliothek verlaengern TITEL` oder eine ID "
+            "mit `bibliothek loans renew ID --confirm`.",
+            as_json=as_json,
+            kind="auth",
+        )
+    for index, loan in enumerate(matches, 1):
+        sys.stderr.write(
+            f"{index}) {loan.get('title')} | fällig {loan.get('due') or '?'}\n"
+        )
+    try:
+        answer = _ask(f"Auswahl [1-{len(matches)}]: ").strip()
+        choice = int(answer)
+    except (EOFError, KeyboardInterrupt):
+        return None, _cancelled(as_json)
+    except ValueError:
+        return None, fail(
+            1, "Bitte eine Zahl aus der Liste eingeben.", as_json=as_json
+        )
+    if not 1 <= choice <= len(matches):
+        return None, fail(1, "Auswahl außerhalb der Liste.", as_json=as_json)
+    return matches[choice - 1], None
+
+
+def cmd_verlaengern(args: argparse.Namespace, as_json: bool) -> int:
+    title = (args.title or "").strip()
+    if not title:
+        return fail(
+            1,
+            "Titel der Ausleihe angeben, z. B. "
+            "`bibliothek verlaengern \"Grundlagen der Hydraulik\"`.",
+            as_json=as_json,
+            kind="usage",
+        )
+    interactive = _stdin_is_tty()
+    confirmed = bool(args.confirm or args.yes)
+    if not confirmed and not interactive:
+        return fail(
+            5,
+            "Verlängerung nicht bestätigt: ohne Terminal keine Aktion. Führe "
+            "`bibliothek verlaengern TITEL` im Terminal aus oder nutze "
+            "--confirm nach `bibliothek login`.",
+            as_json=as_json,
+            kind="confirm_required",
+        )
+
+    sess = _read_session()
+    if sess is None:
+        return fail(2, _LOGIN_MISSING, as_json=as_json, kind="auth")
+    if sess.get("mock"):
+        loan = next(
+            (item for item in _MOCK_LOANS if title.casefold() in item["title"].casefold()),
+            None,
+        )
+        if loan is None:
+            return fail(
+                4,
+                f"Keine Ausleihe zu „{title}“ gefunden. `bibliothek loans` "
+                "zeigt alle Ausleihen.",
+                as_json=as_json,
+                kind="parse",
+            )
+        result = {
+            "id": loan["id"],
+            "title": loan["title"],
+            "renewed": True,
+            "new_due": "2026-11-15",
+            "mock": True,
+        }
+        return emit(result, as_json=as_json, render=_render_verlaengern)
+
+    try:
+        konto = _load_konto_or_fail(sess)
+    except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+        return _fail_http(e, as_json)
+
+    loan, error = _choose_loan(
+        konto["loans"], title, interactive=interactive, as_json=as_json
+    )
+    if error is not None:
+        return error
+
+    if not confirmed:
+        sys.stderr.write(
+            f"Titel: {loan.get('title')}\nFrist: {loan.get('due') or '?'}\n"
+        )
+        try:
+            answer = _ask("Verlängerung verbindlich? [j/N] ")
+        except (EOFError, KeyboardInterrupt):
+            return _cancelled(as_json)
+        if answer.strip().casefold() not in {"j", "ja", "y", "yes"}:
+            return _cancelled(as_json)
+
+    try:
+        result = http_mod.renew_loan(konto, loan)
+    except (http_mod.HttpError, http_mod.ParseError, http_mod.AuthError) as e:
+        return _fail_http(e, as_json)
+    return emit(result, as_json=as_json, render=_render_verlaengern)
 
 
 # ---------- Parser ----------
@@ -620,7 +873,9 @@ def build_parser() -> argparse.ArgumentParser:
             "bei Pipe oder --json JSON."
         ),
     )
-    p_show.add_argument("record", help="Record-ID oder Detail-URL")
+    p_show.add_argument(
+        "record", help="Titel/Suchbegriff, Datensatz-ID (AK…) oder Detail-URL"
+    )
 
     # locations
     sub_p.add_parser(
@@ -649,13 +904,43 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Bibliothekskonto-Session aufbauen. BIBLIOTHEK_USER und "
             "BIBLIOTHEK_PASSWORD haben Vorrang; fehlende Werte werden im "
-            "Terminal interaktiv abgefragt (Benutzernummer und Passwort). "
+            "Terminal interaktiv abgefragt (Ausweisnummer und Passwort). "
             "Ohne Terminal müssen beide Env-Variablen gesetzt sein."
         ),
         epilog=(
             "Beispiel: bibliothek login  |  "
             "BIBLIOTHEK_USER=123 BIBLIOTHEK_PASSWORD=geheim bibliothek login"
         ),
+    )
+    sub_p.add_parser(
+        "whoami",
+        help="Angemeldete Ausweisnummer anzeigen",
+        description=(
+            "Zeigt die gespeicherte Ausweisnummer ohne Passwort oder Cookies. "
+            "Ohne Session: Exit 2 mit Verweis auf `bibliothek login`."
+        ),
+    )
+    p_ver = sub_p.add_parser(
+        "verlaengern",
+        help="Ausleihe per Titel verlängern",
+        description=(
+            "Wählt die Ausleihe über den Titel, zeigt Titel und Frist und fragt "
+            "im Terminal `Verlängerung verbindlich? [j/N]` (Default Nein). "
+            "Erst nach j werden alle Formularschritte gesendet. "
+            "--confirm/--yes sind nur für Agenten; ohne Terminal und ohne Flag "
+            "bricht der Befehl vor jedem Request ab."
+        ),
+        epilog=(
+            "Beispiel: bibliothek verlaengern \"Grundlagen der Hydraulik\"  |  "
+            "bibliothek verlaengern TITEL --confirm"
+        ),
+    )
+    p_ver.add_argument("title", help="Titel oder Teil des Titels der Ausleihe")
+    p_ver.add_argument(
+        "--confirm", action="store_true", help="Ohne [j/N]-Frage (nur Agenten)"
+    )
+    p_ver.add_argument(
+        "--yes", action="store_true", help="Alias für --confirm (nur Agenten)"
     )
     p_loans = sub_p.add_parser(
         "loans",
@@ -667,9 +952,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     loans_sub = p_loans.add_subparsers(dest="loans_cmd", required=False)
     loans_sub.add_parser("list", help="Ausleihen auflisten")
-    p_renew = loans_sub.add_parser("renew", help="Ausleihe verlängern")
+    p_renew = loans_sub.add_parser("renew", help="Ausleihe per ID verlängern")
     p_renew.add_argument("loan_id")
     p_renew.add_argument("--confirm", action="store_true")
+    p_renew.add_argument("--yes", action="store_true", help="Alias für --confirm")
     sub_p.add_parser("logout", help="Session löschen (idempotent)")
 
     return parser
@@ -681,8 +967,10 @@ HANDLERS: dict[str, Callable[[argparse.Namespace, bool], int]] = {
     "watch": cmd_watch,
     "locations": cmd_locations,
     "login": cmd_login,
+    "whoami": cmd_whoami,
     "logout": cmd_logout,
     "loans": cmd_loans,
+    "verlaengern": cmd_verlaengern,
 }
 
 
