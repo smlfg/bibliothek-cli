@@ -38,7 +38,6 @@ ist.
 
 ```ux-session
 $ pipx install git+https://github.com/smlfg/bibliothek-cli
-< bibliothek
 $ bibliothek login
 < Ausweisnummer:
 > 123456789
