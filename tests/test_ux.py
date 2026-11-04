@@ -77,6 +77,19 @@ def test_locations_human_output(monkeypatch, capsys):
 def test_show_human_output(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_stdout_is_tty", lambda: True)
     monkeypatch.setattr(cli.http_mod, "search", _fake_search)
+    monkeypatch.setattr(
+        cli.http_mod,
+        "detail",
+        lambda *args, **kwargs: {
+            "id": "AK63608656",
+            "title": "Python für Einsteiger",
+            "authors": ["Ada Beispiel"],
+            "year": "2026",
+            "signature": "HN PY 1",
+            "copies": [],
+            "locations": [],
+        },
+    )
     rc = cli.main(["show", "AK63608656"])
     out = capsys.readouterr().out
     assert rc == 0

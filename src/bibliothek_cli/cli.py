@@ -297,16 +297,24 @@ def _extract_record_id(rec: str) -> str:
     return match.group(1) if match else rec
 
 
-def _show_from_hit(record: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": record["id"],
-        "title": record["title"],
-        "authors": [record["author"]] if record["author"] else [],
-        "year": record["year"],
-        "signature": record["signature"],
-        "media_type": record["media_type"],
-        "locations": [],
-    }
+def _merge_hit(detail: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    """Ergänzt die Vollanzeige nur um Felder, die sie nicht selbst liefert."""
+    detail.setdefault("title", record.get("title", ""))
+    detail.setdefault("year", record.get("year", ""))
+    if not detail.get("authors") and record.get("author"):
+        detail["authors"] = [record["author"]]
+    detail.setdefault("signature", record.get("signature", ""))
+    detail.setdefault("media_type", record.get("media_type", ""))
+    return detail
+
+
+def _load_detail(record_id: str, base_url: str, as_json: bool) -> tuple[dict | None, int | None]:
+    try:
+        return http_mod.detail(record_id, base_url=base_url), None
+    except http_mod.HttpError as e:
+        return None, fail(3, str(e), as_json=as_json, kind="network")
+    except http_mod.ParseError as e:
+        return None, fail(4, str(e), as_json=as_json, kind="parse")
 
 
 def handle_show(args: argparse.Namespace, as_json: bool) -> int:
@@ -342,7 +350,12 @@ def handle_show(args: argparse.Namespace, as_json: bool) -> int:
                 as_json=as_json,
                 kind="parse",
             )
-        return emit(_show_from_hit(record), as_json=as_json, render=_render_show)
+        detail, error = _load_detail(record["id"], base_url, as_json)
+        if error is not None:
+            return error
+        return emit(
+            _merge_hit(detail, record), as_json=as_json, render=_render_show
+        )
 
     if not results:
         return fail(
@@ -386,21 +399,10 @@ def handle_show(args: argparse.Namespace, as_json: bool) -> int:
             return fail(1, "Auswahl außerhalb der Liste.", as_json=as_json)
         chosen = results[choice - 1]
 
-    try:
-        detail = http_mod.detail(chosen["id"], base_url=base_url)
-    except http_mod.HttpError as e:
-        return fail(3, str(e), as_json=as_json, kind="network")
-    except http_mod.ParseError as e:
-        return fail(4, str(e), as_json=as_json, kind="parse")
-    detail.setdefault("title", chosen["title"])
-    detail.setdefault("year", chosen["year"])
-    if chosen.get("author"):
-        detail["authors"] = [chosen["author"]]
-    elif not detail.get("authors"):
-        detail["authors"] = []
-    detail.setdefault("signature", chosen.get("signature", ""))
-    detail.setdefault("media_type", chosen.get("media_type", ""))
-    return emit(detail, as_json=as_json, render=_render_show)
+    detail, error = _load_detail(chosen["id"], base_url, as_json)
+    if error is not None:
+        return error
+    return emit(_merge_hit(detail, chosen), as_json=as_json, render=_render_show)
 
 
 # ---------- Watch ----------
