@@ -1,26 +1,28 @@
-# QA – bibliothek-cli (Pflicht-QA, 2026-11-04)
+# QA – bibliothek-cli (Pflicht-QA, 2026-11-04; Nachprüfung S6)
 
 Gegenstand: frisch per `pipx install git+https://github.com/smlfg/bibliothek-cli`
 installierter Stand `0.1.0`, Commit `407144b`, Python `3.14.7`.
 Installationsprotokoll: `scratch/qa/pipx-install.log`.
-Ausgeführt wurde ausschließlich `PATH=$PWD/scratch/pipx/bin:$PATH bibliothek …`
-(nicht die Entwicklungs-Venv). Pseudo-Terminal-Sitzungen mit
+In der ursprünglichen QA wurde ausschließlich
+`PATH=$PWD/scratch/pipx/bin:$PATH bibliothek …` ausgeführt (nicht die
+Entwicklungs-Venv); die Nachprüfung S6 nutzte die Entwicklungs-Venv
+`scratch/venv` (editable install). Pseudo-Terminal-Sitzungen mit
 `script -qec`, Live-Aufrufe nur lesend. Es gab keine echten Zugangsdaten;
 Konto- und Verlängerungs-Aktionen wurden gegen `tests/harness/fake_server.py`
 mit den `ux-routes` aus `docs/UX.md` geprüft. Kein Passwort, kein Cookie und
 keine echte Anmeldung wurde gesendet oder gespeichert.
 
-Test-Suite: `61 passed` (`scratch/venv/bin/pytest -q`).
-UX-Spec: `ux_check.py --spec-only` → PASS.
+Test-Suite: `69 passed` (`scratch/venv/bin/pytest -q`).
+UX-Gate: `ux_check.py .` → PASS; `ux_session.py .` → PASS.
 Live-OPAC am 2026-11-04: `https://bsz.ibs-bw.de/hshn` erreichbar, aber
-`/hshn/` antwortet inzwischen mit HTTP 404; `/hshn` leitet mit 301 auf
+`/hshn/` antwortet mit HTTP 404; `/hshn` leitet mit 301 auf
 `/aDISWeb/app?service=direct/0/Home/$DirectLink&sp=SOPAC04` um.
 
-Hinweis zu den Live-Prüfungen: Da der dokumentierte Default `BIBLIOTHEK_BASE_URL`
-durch den 404 auf `/hshn/` bricht (FAIL 1), wurden die semantischen Live-Checks
-zusätzlich mit der dokumentierten Override-Variable und einem Query-Trick
-`BIBLIOTHEK_BASE_URL='https://bsz.ibs-bw.de/hshn?x='` wiederholt. Das ist keine
-Code-Korrektur, sondern nur eine Messhilfe; der Default bleibt FAIL.
+Nachprüfung S6 nach den Fixes `97d3833` (Live-Basis-URL, Suche, Vollanzeige,
+Login) und `6eda0aa` (`show` per ID/Titel). Die Live-Prüfungen liefen jetzt ohne
+Override mit dem Default `https://bsz.ibs-bw.de/hshn`. Beim Login wurde
+ausschließlich die Anmeldemaske per GET/POST bis zum Formular geöffnet; es
+wurden keine Zugangsdaten und kein echter Login-POST gesendet.
 
 ## Befunde
 
@@ -39,9 +41,9 @@ Code-Korrektur, sondern nur eine Messhilfe; der Default bleibt FAIL.
 | 11 | `login` interaktiv gegen Fake | Ausweisnummer + Passwort per PTY | Erfolg, Session 0600, Passwort nicht gespeichert | OK | `scratch/qa/21-fake-login.log`, `session.json` Mode `600`, kein Passwort im Log/File |
 | 12 | `login` unvollständige Eingabe | Fake, leere Ausweisnummer/Passwort | Exit 2, nächster Schritt | OK | `scratch/qa/57-fake-login-empty.log`: `Login unvollständig … Starte bibliothek login erneut.` |
 | 13 | `login` ohne TTY/Env | `bibliothek login --json` | Exit 2, Verweis auf Login | OK | `scratch/qa/71-default-login.err` (Variante mit Env) bzw. `Login fehlt …` |
-| 14 | `search` README live (Default-Base) | `bibliothek search "Grundlagen der Hydraulik" --json` | Treffer, Exit 0 | **FAIL** | `scratch/qa/10-live-search-hydraulik.json`: Exit 4, `Kein Formular in der Antwort gefunden.` |
-| 15 | `show` README live (Default-Base) | `bibliothek show "Grundlagen der Hydraulik" --json` | Detail, Exit 0 | **FAIL** | `scratch/qa/31-default-show.json`: Exit 4, `Kein Formular in der Antwort gefunden.` |
-| 16 | `login` live Default-Base (Dummy, GET scheitert vor POST) | `BIBLIOTHEK_USER=qa-dummy … bibliothek login --json` | Formular erreichbar | **FAIL** | `scratch/qa/71-default-login.json`: Exit 3, `Login-Formular nicht erreichbar: HTTP 404` |
+| 14 | `search` README live (Default-Base) | `bibliothek search "Grundlagen der Hydraulik" --json` | Treffer, Exit 0 | OK (nach Fix `97d3833`) | `scratch/qa/s6-14-default-search.json`: Exit 0, 72 Treffer, erste Signatur `ZL 4650 G875 (2026)` |
+| 15 | `show` README live (Default-Base) | `bibliothek show "Grundlagen der Hydraulik" --json` | Detail, Exit 0 | OK (nach Fix `97d3833`) | `scratch/qa/s6-15-default-show.json`: Exit 0, Standort/Status/Signatur vorhanden |
+| 16 | `login` live Default-Base (Dummy, GET scheitert vor POST) | `BIBLIOTHEK_USER=qa-dummy … bibliothek login --json` | Formular erreichbar | OK (nach Fix `97d3833`; nur Formular-GET) | `scratch/qa/s6-16-login-form.log`: Anmeldemaske HTTP 200, Passwortfeld vorhanden; kein Login-POST |
 | 17 | `verlaengern` live ohne Session (TTY) | `script -qec "bibliothek verlaengern 'Grundlagen der Hydraulik'"` | Exit 2, kein Request | OK | `scratch/qa/74-live-verlaengern-nosession-tty.log`: `[auth] exit 2: Login fehlt …` |
 | 18 | `search` Fake/TTY | `script -qec "bibliothek search 'Grundlagen der Hydraulik'"` | lesbare Trefferliste, kein JSON | OK | `scratch/qa/22-fake-search.log`: `Treffer: 2 (angezeigt: 2)` |
 | 19 | `show` Fake/TTY | `script -qec "bibliothek show 'Grundlagen der Hydraulik'"` | lesbare Detailfelder | OK | `scratch/qa/23-fake-show.log`: Titel/Autor/Jahr/Standort/Signatur/Status/ID |
@@ -59,12 +61,12 @@ Code-Korrektur, sondern nur eine Messhilfe; der Default bleibt FAIL.
 | 31 | Leerer Suchbegriff | `search "" --json`, `search "   " --json` | Exit 1 Usage | OK | `Suchbegriff darf nicht leer sein.` |
 | 32 | Keine Treffer | `search "xyznonexistent99999" --json` | Exit 0, `count=0` | OK | `scratch/qa/46-live-empty.json`: `total_found:0`, `results:[]` |
 | 33 | Umlaute/Tippvarianten | `Künzelsau`/`Kunzelsau`, `Grollius`/`Gröllius`, `Hydralik` | plausible Treffer | OK | `scratch/qa/44-*.json`, `45-*.json`, `54-*.json` |
-| 34 | `--available` | `search "Python" --available --limit 5` vs. ohne | Ranking/bevorzugt verfügbare Treffer | **FAIL** | `scratch/qa/40-live-python-limit5.json` und `43-live-available.json`: `results` byte-gleich; nur `available_only` unterscheidet sich |
-| 35 | Suchfelder Autor/Signatur | Live-Suche | `Grollius, Horst-W.` und Signatur | **FAIL** | `author: "Horst-W. Grollius. - 10. Auflage. - Hanser"`, `signature: ""` (z. B. `scratch/qa/14-*.json`) |
-| 36 | `show` per ID live | `bibliothek show AK63638611 --json` (Override) | Detail mit Standort/Status | **FAIL** | `scratch/qa/47-live-show-id.json`: nur Trefferfelder, `locations: []`, `signature: ""`; kein Detail-Request |
-| 37 | `show` per Titel live | `script -qec "bibliothek show 'Grundlagen der Hydraulik'"` (Override) | Detailfelder | **FAIL** | `scratch/qa/50-live-show-title-tty.log`: `Titel: Ende der Sitzung` … Exit 0 |
+| 34 | `--available` | `search "Python" --available --limit 5` vs. ohne | Ranking/bevorzugt verfügbare Treffer | OK (nach Fix `97d3833`; Python-Beleg ohne verfügbare Treffer) | `scratch/qa/s6-34-*.json`: Python identisch (alle ebooks `available:null`); Hydraulik mit `--available` sortiert Bücher zuerst |
+| 35 | Suchfelder Autor/Signatur | Live-Suche | `Grollius, Horst-W.` und Signatur | OK (nach Fix `97d3833`) | `scratch/qa/s6-35-search-fields.json`: `author: "Grollius, Horst-W."`, Signatur `ZL 4650 G875 (2026)` |
+| 36 | `show` per ID live | `bibliothek show AK63638611 --json` (Override) | Detail mit Standort/Status | OK (nach Fix `97d3833`) | `scratch/qa/s6-36-show-id.json`: Vollanzeige mit Signatur, Standort, Status `Verfügbar` |
+| 37 | `show` per Titel live | `script -qec "bibliothek show 'Grundlagen der Hydraulik'"` (Override) | Detailfelder | OK (nach Fix `97d3833`) | `scratch/qa/s6-37-show-title-tty.log`: Detailfelder statt „Ende der Sitzung“ |
 | 38 | `show` mehrere Treffer ohne TTY | `bibliothek show "Hydraulik" --json` | Exit 1 mit Kandidaten | OK | `scratch/qa/49-live-show-multi.json`: 20 Kandidaten, Hinweis auf ID |
-| 39 | `show` mehrere Treffer im TTY | Auswahl `1` | Detail des Treffers | **FAIL** | `scratch/qa/51-live-show-multi-tty.log`: nach Auswahl `Titel: Ende der Sitzung` |
+| 39 | `show` mehrere Treffer im TTY | Auswahl `1` | Detail des Treffers | OK (nach Fix `97d3833`) | `scratch/qa/s6-39-show-multi-tty.log`: Auswahl `1`, danach vollständige Detailfelder |
 | 40 | `show` unbekannte ID | `bibliothek show AK99999999 --json` | Exit 4, nächster Schritt | OK | `scratch/qa/48-live-show-missing.json`: `Prüfe die ID oder nutze bibliothek search …` |
 | 41 | TTY vs. `--json` | `search …` mit/ohne `--json` | TTY Text, `--json` genau ein Objekt | OK | `scratch/qa/52-live-search-tty.log` (Text), `60-tty-json.log` (JSON) |
 | 42 | Parser-/Usage-Fehler mit `--json` | `bibliothek search --json` | stdout genau ein JSON-Objekt, Exit 1 | OK | `scratch/qa/55-argparse-stdout.txt`; Usage auf stderr |
@@ -74,30 +76,26 @@ Code-Korrektur, sondern nur eine Messhilfe; der Default bleibt FAIL.
 | 46 | Session-Schutz | `stat -c '%a' session.json`; Log prüfen | 0600, kein Passwort | OK | `600`, `21-fake-login.log` ohne Passwort |
 | 47 | Keine Tracebacks | `grep -R Traceback scratch/qa` | keine Treffer | OK | Suche über alle QA-Logs ohne Treffer |
 
-**Zählung: 39 OK / 47, 8 FAIL.**
+**Zählung: 47 OK / 47, 0 FAIL.**
 
-## Offene FAILs
+## Aufgelöste FAILs (S6)
 
-1. **Default-Basis-URL live defekt (kritisch).** `BIBLIOTHEK_BASE_URL=https://bsz.ibs-bw.de/hshn`
-   funktioniert nicht mehr, weil der Code an mehreren Stellen `root + "/"` lädt und
-   `https://bsz.ibs-bw.de/hshn/` inzwischen HTTP 404 liefert. `/hshn` selbst leitet
-   mit 301 auf `/aDISWeb/app?…&sp=SOPAC04` um. Betroffen: `search`, `show`, `login`
-   (und damit auch Konto/Verlängern). Belege: `10-*`, `30-*`, `31-*`, `71-*`,
-   `scratch/qa/11-live-root.headers`. Ein Override mit `?x=` zeigt, dass die
-   Suchlogik selbst funktioniert.
-2. **Live-Detail (`show` per Titel) liefert „Ende der Sitzung“ mit Exit 0.**
-   Der Detail-POST baut die action-URL ohne die `;jsessionid=…` aus dem
-   Formular-`action` neu zusammen; die Antwort ist eine Sitzungsende-Seite.
-   Statt eines Fehlers wird sie als Titel ausgegeben. Belege: `15-*`, `50-*`, `51-*`.
-3. **`show` per ID lädt gar kein Detail.** Der ID-Zweig gibt nur die Trefferfelder
-   zurück; `locations`, `copies`, `signature`, Status und Frist fehlen. Beleg:
-   `47-live-show-id.json`.
-4. **`--available` ist wirkungslos.** Die Trefferliste ist identisch zu einem Lauf
-   ohne den Schalter; es gibt weder einen Serverparameter noch eine clientseitige
-   Bevorzugung. Belege: `40-live-python-limit5.json` vs. `43-live-available.json`.
-5. **Suchfelder sind verschmutzt/leer.** `author` enthält Edition und Verlag
-   (`Horst-W. Grollius. - 10. Auflage. - Hanser`), `signature` ist live leer.
-   Das weicht von `docs/UX.md` (Name, Signatur) ab. Beleg: `14-*`, `58-media-book.json`.
+1. **Default-Basis-URL live defekt.** Behoben in `97d3833`: Startseite wird ohne
+   erzwungenen Schraegstrich geladen; `/hshn` folgt der 301-Weiterleitung.
+   Betroffen waren `search`, `show`, `login` und damit Konto/Verlängern.
+2. **Live-Detail (`show` per Titel) liefert „Ende der Sitzung“.** Behoben in
+   `97d3833`: Der Detail-POST übernimmt die Formular-`action` inklusive
+   `;jsessionid=…` und sendet `selected=ZTEXT       <ID>`.
+3. **`show` per ID lädt gar kein Detail.** Behoben in `97d3833`/`6eda0aa`:
+   Der ID-Zweig lädt die Vollanzeige und übernimmt Standort, Signatur, Status,
+   Exemplare und Frist.
+4. **`--available` ist wirkungslos.** Behoben in `97d3833`: verfügbare Treffer
+   werden clientseitig vor den übrigen einsortiert. Bei Suchläufen, deren Treffer
+   ausschließlich aus ebooks ohne Verfügbarkeitsangabe bestehen (z. B. `Python`),
+   bleibt die Reihenfolge erwartungsgemäß unverändert; der Beleg mit gemischten
+   Treffern ist `s6-34-*-hyd.json`.
+5. **Suchfelder sind verschmutzt/leer.** Behoben in `97d3833`: Autoren werden
+   bereinigt, Signaturen aus der Trefferliste bzw. per Standort-AJAX ergänzt.
 
 Nicht als FAIL gewertet, aber Beobachtung: unbekannte Medientypen werden
 unverändert kleingeschrieben (`stücktitel/band`), siehe `58-media-all.json`.
