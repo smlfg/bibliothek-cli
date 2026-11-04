@@ -151,6 +151,21 @@ def _login_field_names(form) -> tuple[str, str]:
     return user or "$Textfield", password or "$Textfield$0"
 
 
+def _has_password_field(form) -> bool:
+    for inp in form.find_all("input"):
+        if str(inp.get("type") or "").lower() == "password":
+            return True
+    return False
+
+
+def _login_form(html: str, url: str) -> dict | None:
+    try:
+        details = _form_details(html, url)
+    except ParseError:
+        return None
+    return details if _has_password_field(details["form"]) else None
+
+
 def login_session(
     user: str,
     password: str,
@@ -159,37 +174,52 @@ def login_session(
     timeout: float = 30.0,
 ) -> dict:
     """Baut eine echte aDISWeb-Session über das Login-Formular auf."""
-    s = _build_session()
-    root = _root(base_url)
+    s, home = _open_catalog(base_url, timeout=timeout)
+
+    account_payload = _hidden_inputs(home["form"])
+    account_payload["selected"] = "ZTEXT       *SBK"
+    account_payload["keyCode"] = "0"
+    account_payload["scriptEnabled"] = "T"
+    account_payload["scrollPos"] = "0"
     try:
-        home = s.get(root + "/", timeout=timeout, allow_redirects=True)
+        login_page = s.post(
+            home["action"], data=account_payload, timeout=timeout, allow_redirects=True
+        )
     except requests.RequestException as exc:
         raise HttpError(
             f"Netzwerkfehler beim Login: {exc}. Prüfe die Verbindung und "
             "BIBLIOTHEK_BASE_URL."
         ) from exc
-    if home.status_code != 200:
-        raise HttpError(
-            f"Login-Formular nicht erreichbar: HTTP {home.status_code}. "
-            "Prüfe BIBLIOTHEK_BASE_URL."
-        )
-
-    login_page = s.get(
-        _app_url(home.url) + "?service=loginform",
-        timeout=timeout,
-        allow_redirects=True,
-    )
     if login_page.status_code != 200:
         raise HttpError(
-            f"Anmeldemaske nicht erreichbar: HTTP {login_page.status_code}. "
+            f"Login-Formular nicht erreichbar: HTTP {login_page.status_code}. "
             "Prüfe BIBLIOTHEK_BASE_URL."
         )
-    try:
-        details = _form_details(login_page.text, login_page.url)
-    except ParseError as exc:
+    details = _login_form(login_page.text, login_page.url)
+
+    if details is None:
+        # Ältere aDISWeb-Installationen und der Fake-Server liefern die Maske
+        # direkt über service=loginform.
+        try:
+            login_page = s.get(
+                _app_url(home["action"]) + "?service=loginform",
+                timeout=timeout,
+                allow_redirects=True,
+            )
+        except requests.RequestException as exc:
+            raise HttpError(
+                f"Netzwerkfehler beim Login: {exc}. Prüfe die Verbindung."
+            ) from exc
+        if login_page.status_code != 200:
+            raise HttpError(
+                f"Anmeldemaske nicht erreichbar: HTTP {login_page.status_code}. "
+                "Prüfe BIBLIOTHEK_BASE_URL."
+            )
+        details = _login_form(login_page.text, login_page.url)
+    if details is None:
         raise ParseError(
             "Anmeldemaske ohne Formular. Prüfe BIBLIOTHEK_BASE_URL."
-        ) from exc
+        )
 
     payload = dict(details["hidden"])
     user_field, password_field = _login_field_names(details["form"])
@@ -224,8 +254,14 @@ def login_session(
     return {"cookies": cookies, "mock": False}
 
 
-def bootstrap(base_url: str, timeout: float = 30.0) -> tuple[requests.Session, str]:
-    """Holt eine JSESSIONID und liefert (Session, action-URL)."""
+def _open_catalog(
+    base_url: str, timeout: float = 30.0
+) -> tuple[requests.Session, dict]:
+    """Lädt die Startseite ohne erzwingenden Schrägstrich am Ende.
+
+    ``https://bsz.ibs-bw.de/hshn/`` antwortet inzwischen mit HTTP 404, während
+    ``/hshn`` per 301 auf die eigentliche aDISWeb-Startseite umleitet.
+    """
     s = _build_session()
     url = _root(base_url)
     try:
@@ -237,18 +273,59 @@ def bootstrap(base_url: str, timeout: float = 30.0) -> tuple[requests.Session, s
         ) from exc
     if r.status_code != 200 or "aDISWeb/app" not in r.text:
         raise HttpError(
-            f"bootstrap fehlgeschlagen: HTTP {r.status_code} von {url}. "
+            f"Katalog nicht erreichbar: HTTP {r.status_code} von {url}. "
             "Prüfe BIBLIOTHEK_BASE_URL."
         )
     try:
-        action, _service, _sp = _extract_form_context(r.text, r.url)
+        details = _form_details(r.text, r.url)
     except ParseError as exc:
         raise ParseError(
             "Form-action nicht gefunden (kein aDISWeb-Formular). "
             "Prüfe BIBLIOTHEK_BASE_URL."
         ) from exc
-    LOG.info("bootstrap OK: %s", action)
-    return s, action
+    return s, details
+
+
+def bootstrap(base_url: str, timeout: float = 30.0) -> tuple[requests.Session, str]:
+    """Holt eine JSESSIONID und liefert (Session, action-URL)."""
+    s, details = _open_catalog(base_url, timeout=timeout)
+    LOG.info("bootstrap OK: %s", details["action"])
+    return s, details["action"]
+
+
+def _search_payload(details: dict, query: str) -> dict[str, str]:
+    return {
+        "service": details["service"],
+        "sp": details["sp"] or "S0",
+        "scriptEnabled": "T",
+        "$Autosuggest": query,
+        "focus": "",
+        "keyCode": "0",
+        "stz": "",
+        "source": "",
+        "selected": "",
+        "requestCount": "0",
+        "scrollPos": "0",
+        "$FormConditional": "T",
+        "$FormConditional$0": "T",
+        "textButton": "Suchen",
+    }
+
+
+def _post_search(
+    session: requests.Session, details: dict, query: str, timeout: float
+) -> requests.Response:
+    try:
+        return session.post(
+            details["action"],
+            data=_search_payload(details, query),
+            timeout=timeout,
+            allow_redirects=True,
+        )
+    except requests.RequestException as exc:
+        raise HttpError(
+            f"Netzwerkfehler bei der Suche: {exc}. Prüfe die Verbindung."
+        ) from exc
 
 
 def search(
@@ -264,52 +341,25 @@ def search(
     if not 1 <= int(limit) <= 50:
         raise ValueError("limit muss zwischen 1 und 50 liegen")
 
-    s, _action = bootstrap(base_url, timeout=timeout)
-    root = _root(base_url)
-    try:
-        page = s.get(root + "/", timeout=timeout, allow_redirects=True)
-    except requests.RequestException as exc:
-        raise HttpError(
-            f"Netzwerkfehler beim Laden der Suchmaske: {exc}. Prüfe die "
-            "Verbindung."
-        ) from exc
-    action, service, sp = _extract_form_context(page.text, page.url)
-
-    payload: dict[str, str] = {
-        "service": service,
-        "sp": sp or "S0",
-        "scriptEnabled": "T",
-        "$Autosuggest": query,
-        "focus": "",
-        "keyCode": "0",
-        "stz": "",
-        "source": "",
-        "selected": "",
-        "requestCount": "0",
-        "scrollPos": "0",
-        "$FormConditional": "T",
-        "$FormConditional$0": "T",
-        "textButton": "Suchen",
-    }
-    try:
-        r = s.post(action, data=payload, timeout=timeout, allow_redirects=True)
-    except requests.RequestException as exc:
-        raise HttpError(
-            f"Netzwerkfehler bei der Suche: {exc}. Prüfe die Verbindung."
-        ) from exc
+    s, details = _open_catalog(base_url, timeout=timeout)
+    r = _post_search(s, details, query, timeout)
     if r.status_code != 200:
         raise HttpError(
             f"Suche fehlgeschlagen: HTTP {r.status_code}. Versuche es später "
             "erneut."
         )
 
-    return _parse_hits(
+    result = _parse_hits(
         r.text,
         query=query,
         media=media,
         available_only=available_only,
         limit=limit,
     )
+    _enrich_hits(
+        s, r.text, result["results"], base_url=base_url, timeout=timeout
+    )
+    return result
 
 
 _MEDIUM_MAP = {
@@ -321,6 +371,46 @@ _MEDIUM_MAP = {
     "Zeitschrift": "media",
     "Aufsatz": "article",
 }
+
+
+def _clean_author(text: str) -> str:
+    """Entfernt Auflage/Verlag aus dem Listenfeld und dreht Name, Vorname.
+
+    aDISWeb schreibt in ``.rList_name`` oft
+    ``Vorname Nachname. - Auflage. - Verlag``. Für die UX-Spec zählt nur der
+    Verfassername, bei einer einzelnen Person in der Form ``Nachname, Vorname``.
+    """
+    value = _unescape(text).strip()
+    if not value:
+        return ""
+    value = re.sub(r"^(?:von|by)\s+", "", value, flags=re.IGNORECASE)
+    value = re.split(r"\.\s+-\s+", value, maxsplit=1)[0]
+    value = re.sub(r"\s*\[[^\]]*\]\s*$", "", value)
+    value = re.sub(r"\s*\((?:Hrsg|Hg)\.?\)\s*$", "", value, flags=re.IGNORECASE)
+    value = value.strip()
+    if "," not in value and ";" not in value:
+        parts = value.split()
+        if len(parts) >= 2:
+            value = f"{parts[-1]}, {' '.join(parts[:-1])}"
+    return value
+
+
+def _availability(li) -> bool | None:
+    """Liest die Verfügbarkeit aus dem Icon der Trefferliste."""
+    node = li.select_one(".rList_availability img")
+    if node is None:
+        return None
+    label = ""
+    for attr in ("alt", "title"):
+        value = node.get(attr)
+        if isinstance(value, str) and value.strip():
+            label = value.strip().casefold()
+            break
+    if "verfügbar" in label and "nicht" not in label:
+        return True
+    if "ausgeliehen" in label or "nicht verfügbar" in label:
+        return False
+    return None
 
 
 def _parse_hits(
@@ -355,6 +445,8 @@ def _parse_hits(
         year = year_node.get_text(strip=True) if year_node else ""
         sig_node = li.select_one(".rList_sig")
         sig = sig_node.get_text(strip=True) if sig_node else ""
+        if sig in {"\xa0", "&nbsp;"}:
+            sig = ""
         media_icon = li.select_one(".rList_medium img")
         media_label = ""
         if media_icon is not None:
@@ -373,14 +465,17 @@ def _parse_hits(
             {
                 "id": rec_id,
                 "title": _unescape(title),
-                "author": _unescape(author),
+                "author": _clean_author(author),
                 "year": year,
                 "signature": sig,
                 "media_type": media_kind,
+                "available": _availability(li),
             }
         )
-        if len(out) >= limit:
-            break
+
+    if available_only:
+        out.sort(key=lambda item: {True: 0, None: 1, False: 2}[item["available"]])
+    out = out[:limit]
     return {
         "query": query,
         "media": media,
@@ -391,17 +486,82 @@ def _parse_hits(
     }
 
 
-def _parse_detail(html: str, record_id: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
-    title = ""
-    heading = soup.find("h1")
-    if heading is not None:
-        title = heading.get_text(" ", strip=True)
-    authors: list[str] = []
-    if " / " in title:
-        title, rest = title.split(" / ", 1)
-        authors = [part.strip() for part in rest.split(";") if part.strip()]
+def _standort_info(
+    session: requests.Session, ajax_url: str, record_id: str, timeout: float
+) -> dict:
+    """Holt Signatur/Verfügbarkeit eines Treffers über den Standort-AJAX."""
+    try:
+        response = session.get(
+            ajax_url,
+            params={
+                "aDISContext": "ID    BM3600",
+                "aDISTimeout": "5000",
+                "ID": record_id,
+            },
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            },
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        return {}
+    if response.status_code != 200:
+        return {}
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    fields = payload.get("aDISFields") or {}
+    raw = fields.get("HTMINC") or []
+    html = raw[1] if len(raw) > 1 and raw[1] else ""
+    if not html:
+        return {}
+    soup = BeautifulSoup(str(html), "html.parser")
+    result: dict = {}
+    sig = soup.select_one(".so-signatur")
+    if sig is not None:
+        result["signature"] = sig.get_text(" ", strip=True)
+    avail = soup.select_one(".so-verfuegbarkeit")
+    if avail is not None:
+        label = avail.get_text(" ", strip=True).casefold()
+        if "verfügbar" in label and "nicht" not in label:
+            result["available"] = True
+        elif "ausgeliehen" in label or "nicht verfügbar" in label:
+            result["available"] = False
+    return result
 
+
+def _enrich_hits(
+    session: requests.Session,
+    html: str,
+    results: list[dict],
+    *,
+    base_url: str,
+    timeout: float,
+) -> None:
+    """Ergänzt fehlende Signaturen aus dem Standort-Panel (nur lesend)."""
+    match = re.search(r'aDISAjax\.URL\s*=\s*"([^"]+)"', html)
+    if not match:
+        return
+    from urllib.parse import urljoin
+
+    ajax_url = urljoin(base_url, match.group(1))
+    for item in results:
+        if item.get("signature") or item.get("media_type") == "ebook":
+            continue
+        rid = item.get("id") or ""
+        if not rid:
+            continue
+        info = _standort_info(session, ajax_url, rid, timeout)
+        if info.get("signature") and not item.get("signature"):
+            item["signature"] = info["signature"]
+        if item.get("available") is None and "available" in info:
+            item["available"] = info["available"]
+
+
+def _detail_meta(soup) -> dict[str, str]:
+    """Sammelt Metadaten aus Definitionslisten und aDISWeb-Wertetabellen."""
     meta: dict[str, str] = {}
     for dl in soup.find_all("dl"):
         terms = dl.find_all("dt")
@@ -410,12 +570,63 @@ def _parse_detail(html: str, record_id: str) -> dict:
             meta[term.get_text(" ", strip=True).casefold()] = value.get_text(
                 " ", strip=True
             )
+    for table in soup.find_all("table"):
+        for row in table.find_all("tr"):
+            terms = row.find_all("th")
+            values = row.find_all("td")
+            if len(terms) != 1 or len(values) != 1:
+                continue
+            key = terms[0].get_text(" ", strip=True).casefold()
+            if key:
+                meta.setdefault(key, values[0].get_text(" ", strip=True))
+    return meta
 
+
+def _clean_person(text: str) -> str:
+    return re.sub(r"\s*\[[^\]]*\]\s*", " ", text).strip(" ;")
+
+
+def _parse_detail(html: str, record_id: str) -> dict:
+    soup = BeautifulSoup(html, "html.parser")
+    meta = _detail_meta(soup)
+
+    title = meta.get("titel", "")
+    if not title:
+        heading = soup.find("h1")
+        if heading is not None:
+            text = heading.get_text(" ", strip=True)
+            if not text.casefold().startswith("aktuelle seite"):
+                title = text
+    if not title:
+        for heading in soup.find_all("h2"):
+            text = heading.get_text(" ", strip=True)
+            if text.casefold().startswith("aktuelle seite:"):
+                title = text.split(":", 1)[1].strip()
+                break
+
+    authors: list[str] = []
+    if " / " in title:
+        title, rest = title.split(" / ", 1)
+        authors = [
+            _clean_author(part)
+            for part in re.split(r"\s*;\s*", rest)
+            if part.strip()
+        ]
+
+    person = meta.get("person") or meta.get("personen") or ""
+    if person:
+        authors = [
+            _clean_person(part)
+            for part in re.split(r"\s*;\s*", person)
+            if _clean_person(part)
+        ]
+
+    publication = meta.get("veröffentlichung") or meta.get("erscheinungsjahr") or ""
     body_text = soup.get_text(" ", strip=True)
     year = ""
-    match = re.search(r",\s*(\d{4})\b", body_text)
+    match = re.search(r"\b(19|20)\d{2}\b", publication or body_text)
     if match:
-        year = match.group(1)
+        year = match.group(0)
 
     isbn = meta.get("isbn", "")
     subjects = [
@@ -428,14 +639,21 @@ def _parse_detail(html: str, record_id: str) -> dict:
     copies: list[dict[str, str]] = []
     for row in soup.select("table tbody tr"):
         cells = [cell.get_text(" ", strip=True) for cell in row.find_all("td")]
-        if len(cells) < 3:
+        if len(cells) < 3 or cells[0].casefold() == "bibliothek":
             continue
+        status = cells[-1]
+        due_match = re.search(
+            r"fällig am:?\s*([0-9]{2}\.[0-9]{2}\.[0-9]{4})",
+            status,
+            flags=re.IGNORECASE,
+        )
         copies.append(
             {
                 "library": cells[0],
                 "location": cells[1],
                 "signature": cells[2],
-                "status": cells[-1],
+                "status": status,
+                "due": due_match.group(1) if due_match else "",
             }
         )
     signature = copies[0]["signature"] if copies else ""
@@ -462,7 +680,7 @@ def _parse_detail(html: str, record_id: str) -> dict:
         "id": hidden_id or record_id,
         "title": _unescape(title),
         "authors": authors,
-        "publisher": _publisher_line(soup),
+        "publisher": publication or _publisher_line(soup),
         "year": year,
         "isbn": isbn,
         "subjects": subjects,
@@ -481,32 +699,71 @@ def _publisher_line(soup) -> str:
     return ""
 
 
+def _hidden_inputs(form) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for inp in form.find_all("input"):
+        name = inp.get("name")
+        if not name:
+            continue
+        kind = str(inp.get("type") or "text").lower()
+        if kind != "hidden":
+            continue
+        value = inp.get("value")
+        payload[str(name)] = str(value) if value is not None else ""
+    return payload
+
+
+def _is_session_end(html: str) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+    nodes = [soup.title, *soup.find_all(["h1", "h2", "h3"])]
+    for node in nodes:
+        if node is None:
+            continue
+        text = node.get_text(" ", strip=True).casefold()
+        if "ende der sitzung" in text or "sitzung beendet" in text:
+            return True
+    return False
+
+
 def detail(
     record_id: str,
     *,
     base_url: str = DEFAULT_BASE,
     timeout: float = 30.0,
 ) -> dict:
-    """Lädt die Vollanzeige zu einer Datensatz-ID."""
-    s, _action = bootstrap(base_url, timeout=timeout)
-    root = _root(base_url)
-    try:
-        page = s.get(root + "/", timeout=timeout, allow_redirects=True)
-    except requests.RequestException as exc:
+    """Lädt die Vollanzeige zu einer Datensatz-ID.
+
+    aDISWeb öffnet Details per Formular-Submit aus der Trefferliste: Das Feld
+    ``selected`` enthält ``"ZTEXT       <ID>"``. Die action-URL inklusive
+    ``;jsessionid=…`` muss dabei unverändert bleiben.
+    """
+    s, details = _open_catalog(base_url, timeout=timeout)
+    search_response = _post_search(s, details, record_id, timeout)
+    if search_response.status_code != 200:
         raise HttpError(
-            f"Netzwerkfehler beim Laden der Vollanzeige: {exc}. Prüfe die "
-            "Verbindung."
-        ) from exc
-    details = _form_details(page.text, page.url)
-    payload = dict(details["hidden"])
-    payload["service"] = "detail"
-    payload["sp"] = details["sp"] or "S0"
-    payload["selected"] = record_id
-    payload.setdefault("keyCode", "0")
-    payload["scriptEnabled"] = "T"
-    action = _app_url(page.url) + "?service=detail"
+            f"Trefferliste für {record_id} nicht erreichbar: HTTP "
+            f"{search_response.status_code}. Versuche es später erneut."
+        )
     try:
-        r = s.post(action, data=payload, timeout=timeout, allow_redirects=True)
+        page_details = _form_details(search_response.text, search_response.url)
+    except ParseError as exc:
+        raise ParseError(
+            "Trefferliste ohne Formular; die Vollanzeige ist nicht erreichbar. "
+            "Prüfe die ID oder nutze `bibliothek search SUCHBEGRIFF`."
+        ) from exc
+
+    payload = _hidden_inputs(page_details["form"])
+    payload["selected"] = f"ZTEXT       {record_id}"
+    payload["keyCode"] = "0"
+    payload["scriptEnabled"] = "T"
+    payload["scrollPos"] = "0"
+    try:
+        r = s.post(
+            page_details["action"],
+            data=payload,
+            timeout=timeout,
+            allow_redirects=True,
+        )
     except requests.RequestException as exc:
         raise HttpError(
             f"Netzwerkfehler beim Laden der Vollanzeige: {exc}. Prüfe die "
@@ -517,7 +774,18 @@ def detail(
             f"Vollanzeige fehlgeschlagen: HTTP {r.status_code}. Versuche es "
             "später erneut."
         )
-    return _parse_detail(r.text, record_id)
+    if _is_session_end(r.text):
+        raise ParseError(
+            "Vollanzeige lieferte „Ende der Sitzung“ statt eines Datensatzes. "
+            "Starte `bibliothek show` erneut."
+        )
+    parsed = _parse_detail(r.text, record_id)
+    if not parsed.get("title"):
+        raise ParseError(
+            "Vollanzeige ohne Titel erkannt. Prüfe die ID oder nutze "
+            "`bibliothek search SUCHBEGRIFF`."
+        )
+    return parsed
 
 
 def _parse_loans(html: str) -> list[dict]:
@@ -560,7 +828,7 @@ def load_konto(
     s = _session_from_cookies(cookies, base_url)
     root = _root(base_url)
     try:
-        home = s.get(root + "/", timeout=timeout, allow_redirects=True)
+        home = s.get(root, timeout=timeout, allow_redirects=True)
     except requests.RequestException as exc:
         raise HttpError(
             f"Netzwerkfehler beim Laden des Kontos: {exc}. Prüfe die "
